@@ -1,0 +1,120 @@
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
+import fs from 'node:fs'
+
+// Run with: npm run test:rules   (starts the Firestore emulator, runs this file, shuts it down)
+const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').split(':')
+const env = await initializeTestEnvironment({ projectId: 'demo-loveportal', firestore: { host, port: Number(port), rules: fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8') } })
+let pass = 0, fail = 0
+const t = async (name, fn) => { try { await fn(); pass++; console.log('  ✓', name) } catch (e) { fail++; console.log('  ✗', name, '\n     ', String(e.message).split('\n')[0]) } }
+const ctx = (uid, verified = true) => env.authenticatedContext(uid, { email_verified: verified, email: uid + '@x.com' }).firestore()
+const now = Date.now()
+
+await env.clearFirestore()
+await env.withSecurityRulesDisabled(async (c) => { const d = c.firestore(); await d.doc('users/bob').set({ uid: 'bob', name: 'Bob' }); await d.doc('users/alice').set({ uid: 'alice', name: 'Alice' }); await d.doc('users/carol').set({ uid: 'carol', name: 'Carol' }) })
+
+console.log('users & codes')
+await t('owner reads own user', () => assertSucceeds(ctx('alice').doc('users/alice').get()))
+await t('other cannot read user', () => assertFails(ctx('bob').doc('users/alice').get()))
+await t('unauthenticated cannot read', () => assertFails(env.unauthenticatedContext().firestore().doc('users/alice').get()))
+await t('create own user profile (even unverified)', () => assertSucceeds(ctx('dave', false).doc('users/dave').set({ uid: 'dave', name: 'Dave', email: 'd@x.com', connectionCode: 'LOVE-DDDD', profileComplete: false, createdAt: now })))
+await t('cannot create someone else’s profile', () => assertFails(ctx('bob').doc('users/zed').set({ uid: 'zed', name: 'Z' })))
+await t('create own code', () => assertSucceeds(ctx('alice').doc('connectionCodes/LOVE-AAAA').set({ code: 'LOVE-AAAA', uid: 'alice', name: 'Alice' })))
+await t('create own code 2', () => assertSucceeds(ctx('bob').doc('connectionCodes/LOVE-BBBB').set({ code: 'LOVE-BBBB', uid: 'bob', name: 'Bob' })))
+await t('lookup a code by exact id', () => assertSucceeds(ctx('bob').doc('connectionCodes/LOVE-AAAA').get()))
+await t('cannot enumerate codes', () => assertFails(ctx('bob').collection('connectionCodes').get()))
+await t('cannot hijack someone’s code', () => assertFails(ctx('bob').doc('connectionCodes/LOVE-AAAA').set({ code: 'LOVE-AAAA', uid: 'bob', name: 'Evil' })))
+await t('cannot register a code for another uid', () => assertFails(ctx('bob').doc('connectionCodes/LOVE-CCCC').set({ code: 'LOVE-CCCC', uid: 'alice', name: 'x' })))
+await t('cannot register a malformed code', () => assertFails(ctx('bob').doc('connectionCodes/hello').set({ code: 'hello', uid: 'bob', name: 'x' })))
+
+console.log('connection requests')
+const req = { fromUid: 'bob', toUid: 'alice', fromName: 'Bob', toName: 'Alice', status: 'pending', createdAt: now, expiresAt: now + 7 * 86400000 }
+await t('unverified user cannot send request', () => assertFails(ctx('bob', false).doc('connectionRequests/bob_alice').set(req)))
+await t('cannot send request to yourself', () => assertFails(ctx('bob').doc('connectionRequests/bob_bob').set({ ...req, toUid: 'bob' })))
+await t('cannot forge request from someone else', () => assertFails(ctx('carol').doc('connectionRequests/bob_alice').set(req)))
+await t('cannot send with far-future expiry', () => assertFails(ctx('bob').doc('connectionRequests/bob_alice').set({ ...req, expiresAt: now + 90 * 86400000 })))
+await t('cannot send pre-accepted request', () => assertFails(ctx('bob').doc('connectionRequests/bob_alice').set({ ...req, status: 'accepted' })))
+await t('send request', () => assertSucceeds(ctx('bob').doc('connectionRequests/bob_alice').set(req)))
+await t('duplicate while pending is blocked', () => assertFails(ctx('bob').doc('connectionRequests/bob_alice').set(req)))
+await t('get non-existent request (reverse check) allowed', () => assertSucceeds(ctx('bob').doc('connectionRequests/alice_bob').get()))
+await t('recipient can read', () => assertSucceeds(ctx('alice').doc('connectionRequests/bob_alice').get()))
+await t('stranger cannot read', () => assertFails(ctx('carol').doc('connectionRequests/bob_alice').get()))
+await t('recipient lists incoming', () => assertSucceeds(ctx('alice').collection('connectionRequests').where('toUid', '==', 'alice').get()))
+await t('stranger cannot list others’ incoming', () => assertFails(ctx('carol').collection('connectionRequests').where('toUid', '==', 'alice').get()))
+await t('sender cannot accept own request', () => assertFails(ctx('bob').doc('connectionRequests/bob_alice').update({ status: 'accepted', coupleId: 'c1' })))
+await t('stranger cannot decline', () => assertFails(ctx('carol').doc('connectionRequests/bob_alice').update({ status: 'declined' })))
+
+console.log('accept → couple + links (atomic batch)')
+const batchAccept = async (db, coupleId, members, reqId, acceptor) => {
+  const b = db.batch()
+  b.update(db.doc(`connectionRequests/${reqId}`), { status: 'accepted', coupleId })
+  b.set(db.doc(`couples/${coupleId}`), { members, memberInfo: { [members[0]]: { name: 'x' }, [members[1]]: { name: 'y' } }, requestId: reqId, status: 'active', createdAt: now })
+  b.set(db.doc(`partnerLinks/${members[0]}`), { coupleId, partnerId: members[1] })
+  b.set(db.doc(`partnerLinks/${members[1]}`), { coupleId, partnerId: members[0] })
+  return b.commit()
+}
+await t('stranger cannot forge a couple for bob+alice', () => assertFails(batchAccept(ctx('carol'), 'cx', ['bob', 'alice'], 'bob_alice')))
+await t('couple without accepted request is denied', () => assertFails(ctx('alice').doc('couples/c9').set({ members: ['bob', 'alice'], memberInfo: {}, requestId: 'bob_alice', status: 'active', createdAt: now })))
+await t('recipient accepts → couple created', () => assertSucceeds(batchAccept(ctx('alice'), 'c1', ['bob', 'alice'], 'bob_alice')))
+await t('both partnerLinks readable by own owner', async () => { await assertSucceeds(ctx('bob').doc('partnerLinks/bob').get()); await assertSucceeds(ctx('alice').doc('partnerLinks/alice').get()) })
+await t('other users cannot read partnerLinks', () => assertFails(ctx('carol').doc('partnerLinks/alice').get()))
+await t('listening to a not-yet-created couple doc is allowed (race on accept)', () => assertSucceeds(ctx('alice').doc('couples/not-created-yet').get()))
+await t('members can read couple', () => assertSucceeds(ctx('bob').doc('couples/c1').get()))
+await t('non-member cannot read couple', () => assertFails(ctx('carol').doc('couples/c1').get()))
+await t('member cannot change members', () => assertFails(ctx('bob').doc('couples/c1').update({ members: ['bob', 'carol'] })))
+await t('member can set anniversary', () => assertSucceeds(ctx('bob').doc('couples/c1').update({ anniversary: '2025-01-01' })))
+await t('non-member cannot edit couple', () => assertFails(ctx('carol').doc('couples/c1').update({ anniversary: '1999-01-01' })))
+// carol tries to connect to already-connected alice
+await env.withSecurityRulesDisabled(async (c) => { await c.firestore().doc('connectionRequests/carol_alice').set({ ...req, fromUid: 'carol', toUid: 'alice', status: 'pending' }) })
+await t('already-connected user cannot form a 2nd couple', () => assertFails(batchAccept(ctx('alice'), 'c2', ['carol', 'alice'], 'carol_alice')))
+await t('couple delete is never allowed', () => assertFails(ctx('bob').doc('couples/c1').delete()))
+
+console.log('couple data isolation')
+const mem = { coupleId: 'c1', authorId: 'alice', title: 'Pier', createdAt: now, date: '2025-01-01', tags: [], category: 'Trips', mediaType: 'none' }
+await t('member adds memory', () => assertSucceeds(ctx('alice').collection('memories').add(mem)))
+await t('member lists own couple’s memories', () => assertSucceeds(ctx('bob').collection('memories').where('coupleId', '==', 'c1').get()))
+await t('outsider cannot list that couple’s memories', () => assertFails(ctx('carol').collection('memories').where('coupleId', '==', 'c1').get()))
+await t('outsider cannot add into that couple', () => assertFails(ctx('carol').collection('memories').add({ ...mem, authorId: 'carol' })))
+await t('cannot spoof authorId', () => assertFails(ctx('alice').collection('memories').add({ ...mem, authorId: 'bob' })))
+await t('unverified member is locked out', () => assertFails(ctx('alice', false).collection('memories').where('coupleId', '==', 'c1').get()))
+await t('unfiltered query over all memories denied', () => assertFails(ctx('alice').collection('memories').get()))
+await t('no direct write to unknown collections', () => assertFails(ctx('alice').collection('secrets').add({ a: 1 })))
+
+const m1 = await ctx('alice').collection('messages').add({ coupleId: 'c1', authorId: 'alice', kind: 'text', text: 'hi', createdAt: now })
+await t('partner can react to message', () => assertSucceeds(ctx('bob').doc(`messages/${m1.id}`).update({ reactions: { bob: '❤️' } })))
+await t('partner can pin / favourite', () => assertSucceeds(ctx('bob').doc(`messages/${m1.id}`).update({ pinned: true, favoritedBy: ['bob'] })))
+await t('partner cannot edit text', () => assertFails(ctx('bob').doc(`messages/${m1.id}`).update({ text: 'tampered' })))
+await t('partner cannot delete my message', () => assertFails(ctx('bob').doc(`messages/${m1.id}`).delete()))
+await t('author can delete own message', () => assertSucceeds(ctx('alice').doc(`messages/${m1.id}`).delete()))
+await t('invalid message kind rejected', () => assertFails(ctx('alice').collection('messages').add({ coupleId: 'c1', authorId: 'alice', kind: 'weird', createdAt: now })))
+await t('oversized message rejected', () => assertFails(ctx('alice').collection('messages').add({ coupleId: 'c1', authorId: 'alice', kind: 'text', text: 'x'.repeat(2001), createdAt: now })))
+
+const l1 = await ctx('alice').collection('letters').add({ coupleId: 'c1', authorId: 'alice', toUid: 'bob', title: 'Open when', html: '<p>x</p>', unlockAt: now + 1e9, createdAt: now })
+await t('letter to a non-partner is rejected', () => assertFails(ctx('alice').collection('letters').add({ coupleId: 'c1', authorId: 'alice', toUid: 'carol', title: 't', html: 'x', unlockAt: now, createdAt: now })))
+await t('recipient can mark letter opened', () => assertSucceeds(ctx('bob').doc(`letters/${l1.id}`).update({ openedAt: now })))
+await t('recipient cannot rewrite letter', () => assertFails(ctx('bob').doc(`letters/${l1.id}`).update({ html: 'hacked' })))
+await t('recipient cannot unlock early by editing unlockAt', () => assertFails(ctx('bob').doc(`letters/${l1.id}`).update({ unlockAt: 0 })))
+
+const c1 = await ctx('alice').collection('coupons').add({ coupleId: 'c1', authorId: 'alice', toUid: 'bob', title: 'Hug', emoji: '🤗', createdAt: now })
+await t('recipient redeems coupon', () => assertSucceeds(ctx('bob').doc(`coupons/${c1.id}`).update({ redeemedAt: now })))
+await t('recipient cannot edit coupon title', () => assertFails(ctx('bob').doc(`coupons/${c1.id}`).update({ title: 'Free car' })))
+
+await t('mood: own doc only', async () => { await assertSucceeds(ctx('bob').doc('moods/c1_bob').set({ coupleId: 'c1', uid: 'bob', mood: 'happy', updatedAt: now, createdAt: now })); await assertFails(ctx('bob').doc('moods/c1_alice').set({ coupleId: 'c1', uid: 'alice', mood: 'sad', updatedAt: now })) })
+await t('games doc: both members, id-bound to couple', async () => { await assertSucceeds(ctx('bob').doc('games/c1_wyr').set({ coupleId: 'c1', game: 'wyr', picks: {} })); await assertFails(ctx('bob').doc('games/zzz').set({ coupleId: 'c1', game: 'wyr' })) })
+
+await t('notification to partner', () => assertSucceeds(ctx('alice').collection('notifications').add({ coupleId: 'c1', fromUid: 'alice', toUid: 'bob', type: 'message', title: 'hi', read: false, createdAt: now })))
+await t('notification to outsider denied', () => assertFails(ctx('alice').collection('notifications').add({ coupleId: 'c1', fromUid: 'alice', toUid: 'carol', type: 'message', title: 'hi', read: false, createdAt: now })))
+await t('recipient reads own notifications', () => assertSucceeds(ctx('bob').collection('notifications').where('coupleId', '==', 'c1').where('toUid', '==', 'bob').get()))
+await t('sender cannot read partner’s notifications', () => assertFails(ctx('alice').collection('notifications').where('coupleId', '==', 'c1').where('toUid', '==', 'bob').get()))
+
+console.log('disconnect')
+await t('stranger cannot sever the link', () => assertFails(ctx('carol').doc('partnerLinks/alice').delete()))
+await t('member disconnects both links', async () => {
+  const db = ctx('bob'), b = db.batch()
+  b.delete(db.doc('partnerLinks/bob')); b.delete(db.doc('partnerLinks/alice')); b.update(db.doc('couples/c1'), { status: 'disconnected' })
+  await assertSucceeds(b.commit())
+})
+await t('after disconnect old data is inaccessible', () => assertFails(ctx('alice').collection('memories').where('coupleId', '==', 'c1').get()))
+
+await env.cleanup()
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

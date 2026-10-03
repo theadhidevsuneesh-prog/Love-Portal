@@ -1,0 +1,222 @@
+rules_version = '2';
+
+// Love Portal — Firestore security rules.
+// Principle: every private document carries a coupleId, and is readable/writable only by
+// the two members of that couple (couples/{coupleId}.members). Users can read nothing about
+// anyone else except what is intentionally public: a name/photo behind a connection code.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────── helpers ─────────
+    function signedIn() { return request.auth != null; }
+    function verified() { return signedIn() && request.auth.token.email_verified == true; }
+    function me() { return request.auth.uid; }
+
+    function coupleDoc(coupleId) { return get(/databases/$(database)/documents/couples/$(coupleId)); }
+    // true when the signed-in, verified user belongs to this (active) couple
+    function inCouple(coupleId) {
+      return verified()
+        && exists(/databases/$(database)/documents/couples/$(coupleId))
+        && coupleDoc(coupleId).data.status == 'active'
+        && coupleDoc(coupleId).data.members.hasAny([me()]);
+    }
+    function partnerOf(coupleId, uid) {
+      return coupleDoc(coupleId).data.members.hasAll([me(), uid]) && uid != me();
+    }
+    function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function sameOwner() {
+      return request.resource.data.coupleId == resource.data.coupleId
+          && request.resource.data.authorId == resource.data.authorId;
+    }
+    function createdByMe() {
+      return inCouple(request.resource.data.coupleId)
+          && request.resource.data.authorId == me()
+          && request.resource.data.createdAt is number;
+    }
+    function readable() { return inCouple(resource.data.coupleId); }
+    function mine() { return readable() && resource.data.authorId == me(); }
+
+    // ───────── users (private profile; only the owner can read it) ─────────
+    match /users/{userId} {
+      allow read: if signedIn() && me() == userId;
+      allow create: if signedIn() && me() == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasOnly(['uid','name','nickname','email','photoURL','birthday','connectionCode','profileComplete','createdAt','theme','notificationPrefs','privacy'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+      allow update: if signedIn() && me() == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+      allow delete: if signedIn() && me() == userId;
+    }
+
+    // ───────── connection codes (public name+photo, but only retrievable by exact code) ─────────
+    match /connectionCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false; // no enumeration
+      allow create: if signedIn()
+        && request.resource.data.uid == me()
+        && request.resource.data.code == code
+        && code.matches('LOVE-[A-Z0-9]{4}')
+        && request.resource.data.keys().hasOnly(['code','uid','name','photoURL']);
+      allow update: if signedIn() && resource.data.uid == me() && request.resource.data.uid == me() && request.resource.data.code == code;
+      allow delete: if signedIn() && resource.data.uid == me();
+    }
+
+    // ───────── connection requests ─────────
+    match /connectionRequests/{reqId} {
+      allow get: if verified() && (resource == null || resource.data.fromUid == me() || resource.data.toUid == me());
+      allow list: if verified() && (resource.data.fromUid == me() || resource.data.toUid == me());
+
+      allow create: if verified()
+        && reqId == me() + '_' + request.resource.data.toUid
+        && request.resource.data.fromUid == me()
+        && request.resource.data.toUid != me()
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.toUid))
+        && request.resource.data.status == 'pending'
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + 8 * 86400000;
+
+      // sender re-sends after a decline/cancel/expiry, or cancels
+      allow update: if verified() && resource.data.fromUid == me()
+          && request.resource.data.fromUid == resource.data.fromUid
+          && request.resource.data.toUid == resource.data.toUid
+          && (
+            request.resource.data.status == 'cancelled'
+            || (request.resource.data.status == 'pending'
+                && (resource.data.status in ['declined','cancelled'] || resource.data.expiresAt < request.time.toMillis())
+                && request.resource.data.expiresAt <= request.time.toMillis() + 8 * 86400000)
+          );
+      // recipient declines
+      allow update: if verified() && resource.data.toUid == me()
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'declined'
+          && onlyKeys(['status']);
+      // recipient accepts (only valid together with the couple + partnerLinks writes in one batch)
+      allow update: if verified() && resource.data.toUid == me()
+          && resource.data.status == 'pending'
+          && resource.data.expiresAt > request.time.toMillis()
+          && request.resource.data.status == 'accepted'
+          && onlyKeys(['status','coupleId']);
+    }
+
+    // ───────── partnerLinks: one active partner per user ─────────
+    match /partnerLinks/{userId} {
+      allow read: if verified() && me() == userId;
+      // created only inside the accept batch, for a brand-new couple that contains both people
+      allow create: if verified()
+        && !exists(/databases/$(database)/documents/couples/$(request.resource.data.coupleId))
+        && getAfter(/databases/$(database)/documents/couples/$(request.resource.data.coupleId)).data.members.hasAll([userId, request.resource.data.partnerId])
+        && getAfter(/databases/$(database)/documents/couples/$(request.resource.data.coupleId)).data.members.hasAny([me()])
+        && request.resource.data.keys().hasOnly(['coupleId','partnerId']);
+      allow update: if false;
+      allow delete: if verified() && (me() == userId
+        || get(/databases/$(database)/documents/couples/$(resource.data.coupleId)).data.members.hasAny([me()]));
+    }
+
+    // ───────── couples ─────────
+    match /couples/{coupleId} {
+      // `resource == null` lets a freshly-linked member start listening before the create commits,
+      // without revealing anything (a missing document has no data).
+      allow get: if verified() && (resource == null || resource.data.members.hasAny([me()]));
+      allow list: if verified() && resource.data.members.hasAny([me()]);
+      allow create: if verified()
+        && request.resource.data.status == 'active'
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members[1] == me()
+        && request.resource.data.members[0] != me()
+        // backed by an accepted, unexpired request from the other person to me
+        && getAfter(/databases/$(database)/documents/connectionRequests/$(request.resource.data.requestId)).data.status == 'accepted'
+        && getAfter(/databases/$(database)/documents/connectionRequests/$(request.resource.data.requestId)).data.coupleId == coupleId
+        && getAfter(/databases/$(database)/documents/connectionRequests/$(request.resource.data.requestId)).data.toUid == me()
+        && getAfter(/databases/$(database)/documents/connectionRequests/$(request.resource.data.requestId)).data.fromUid == request.resource.data.members[0]
+        // neither person already has a partner
+        && !exists(/databases/$(database)/documents/partnerLinks/$(request.resource.data.members[0]))
+        && !exists(/databases/$(database)/documents/partnerLinks/$(request.resource.data.members[1]));
+      allow update: if verified() && resource.data.members.hasAny([me()])
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.requestId == resource.data.requestId
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
+    // ───────── couple-owned data ─────────
+    match /messages/{id} {
+      allow read: if readable();
+      allow create: if createdByMe()
+        && request.resource.data.kind in ['text','image','voice','gesture']
+        && (!('text' in request.resource.data) || request.resource.data.text.size() <= 2000);
+      // partner may only react / pin / favourite; the author may edit anything but ownership
+      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || onlyKeys(['reactions','pinned','favoritedBy']));
+      allow delete: if mine();
+    }
+    match /memories/{id} {
+      allow read: if readable();
+      allow create: if createdByMe() && request.resource.data.title is string && request.resource.data.title.size() <= 100;
+      allow update, delete: if mine() && sameOwner();
+    }
+    match /letters/{id} {
+      allow read: if readable();
+      allow create: if createdByMe() && partnerOf(request.resource.data.coupleId, request.resource.data.toUid)
+        && request.resource.data.title is string && request.resource.data.title.size() <= 100
+        && request.resource.data.unlockAt is number;
+      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['openedAt'])));
+      allow delete: if mine();
+    }
+    match /dateIdeas/{id} {
+      allow read: if readable();
+      allow create: if createdByMe();
+      allow update: if readable() && sameOwner();
+      allow delete: if readable();
+    }
+    match /games/{id} {
+      allow read: if readable();
+      allow create: if inCouple(request.resource.data.coupleId) && id.matches(request.resource.data.coupleId + '_.*');
+      allow update: if readable() && request.resource.data.coupleId == resource.data.coupleId;
+      allow delete: if readable();
+    }
+    match /surprises/{id} {
+      allow read: if readable();
+      allow create: if createdByMe() && partnerOf(request.resource.data.coupleId, request.resource.data.toUid);
+      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['openedAt'])));
+      allow delete: if mine();
+    }
+    match /coupons/{id} {
+      allow read: if readable();
+      allow create: if createdByMe() && partnerOf(request.resource.data.coupleId, request.resource.data.toUid);
+      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['redeemedAt'])));
+      allow delete: if mine();
+    }
+    match /timelineEvents/{id} {
+      allow read: if readable();
+      allow create: if createdByMe();
+      allow update, delete: if mine() && sameOwner();
+    }
+    match /playlist/{id} {
+      allow read: if readable();
+      allow create: if createdByMe();
+      allow update, delete: if mine() && sameOwner();
+    }
+    // one mood document per person: <coupleId>_<uid>
+    match /moods/{id} {
+      allow read: if readable();
+      allow create, update: if inCouple(request.resource.data.coupleId)
+        && request.resource.data.uid == me()
+        && id == request.resource.data.coupleId + '_' + me();
+      allow delete: if readable() && resource.data.uid == me();
+    }
+    // notifications are addressed to one person
+    match /notifications/{id} {
+      allow read: if readable() && resource.data.toUid == me();
+      allow create: if inCouple(request.resource.data.coupleId)
+        && request.resource.data.fromUid == me()
+        && partnerOf(request.resource.data.coupleId, request.resource.data.toUid);
+      allow update: if readable() && resource.data.toUid == me() && onlyKeys(['read']);
+      allow delete: if readable() && resource.data.toUid == me();
+    }
+
+    // default deny
+    match /{document=**} { allow read, write: if false; }
+  }
+}

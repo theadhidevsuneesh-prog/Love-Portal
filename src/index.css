@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-paper: 251 246 239;
+  --c-surface: 255 252 248;
+  --c-ink: 43 26 31;
+  --c-muted: 122 98 104;
+  --c-line: 233 221 211;
+  --c-wine: 107 29 46;
+  --c-wine-deep: 74 18 32;
+  --c-rose: 232 165 176;
+  --c-blush: 247 221 224;
+  --c-gold: 184 146 98;
+  --c-shadow: 74 18 32;
+  color-scheme: light;
+}
+[data-theme='dusk'] {
+  --c-paper: 24 14 18;
+  --c-surface: 37 24 29;
+  --c-ink: 246 236 233;
+  --c-muted: 181 158 163;
+  --c-line: 66 46 52;
+  --c-wine: 193 78 104;
+  --c-wine-deep: 140 44 68;
+  --c-rose: 232 165 176;
+  --c-blush: 68 35 45;
+  --c-gold: 214 178 130;
+  --c-shadow: 0 0 0;
+  color-scheme: dark;
+}
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    min-height: 100dvh;
+  }
+  h1, h2, h3, .font-display { @apply font-serif tracking-tight; }
+  ::selection { background: rgb(var(--c-rose) / 0.5); }
+  :focus-visible { @apply outline-none ring-2 ring-wine/60 ring-offset-2 ring-offset-paper; }
+  button, a { -webkit-touch-callout: none; }
+}
+
+@layer components {
+  .glass {
+    @apply border border-white/40 bg-surface/70 backdrop-blur-xl;
+  }
+  [data-theme='dusk'] .glass { @apply border-white/10; }
+  .card {
+    @apply rounded-3xl border border-line/80 bg-surface shadow-soft;
+  }
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-wine/80;
+  }
+  .scroll-hide { scrollbar-width: none; }
+  .scroll-hide::-webkit-scrollbar { display: none; }
+  .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+  .skeleton {
+    @apply relative overflow-hidden rounded-2xl bg-line/60;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+    transform: translateX(-100%);
+  }
+  .rich-content h2 { @apply mb-2 mt-4 font-serif text-2xl; }
+  .rich-content p { @apply mb-3 leading-relaxed; }
+  .rich-content ul { @apply mb-3 list-disc pl-6; }
+  .rich-content ol { @apply mb-3 list-decimal pl-6; }
+  .rich-content blockquote { @apply my-3 border-l-2 border-rose pl-4 italic; }
+  .rich-content img { @apply my-3 max-h-80 rounded-2xl; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

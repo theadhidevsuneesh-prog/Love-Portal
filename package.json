@@ -1,0 +1,42 @@
+{
+  "name": "love-portal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit",
+    "emulators": "firebase emulators:start --project demo-loveportal --only auth,firestore,storage",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-loveportal \"node tests/firestore.rules.test.mjs\""
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "dompurify": "^3.2.6",
+    "firebase": "^11.10.0",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.468.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^22.15.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.6.0",
+    "autoprefixer": "^10.4.21",
+    "firebase-tools": "^15.32.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.19"
+  }
+}

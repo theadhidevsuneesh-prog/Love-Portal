@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Love Portal — Cloud Storage security rules.
+// NOTE: cross-service rules (firestore.get) need the "Firebase Rules Firestore Service Agent"
+// role on the project — the Firebase console / CLI grants this automatically on first deploy.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() { return request.auth != null; }
+    function inCouple(coupleId) {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && firestore.get(/databases/(default)/documents/couples/$(coupleId)).data.members.hasAny([request.auth.uid])
+        && firestore.get(/databases/(default)/documents/couples/$(coupleId)).data.status == 'active';
+    }
+
+    // Profile photos: owner writes; any signed-in user may read (needed for the "Is this your person?" preview).
+    match /users/{uid}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Everything a couple uploads: memories, chat media, letters, surprises, booth strips…
+    match /couples/{coupleId}/{allPaths=**} {
+      allow read: if inCouple(coupleId);
+      allow create: if inCouple(coupleId)
+        && request.resource.size < 100 * 1024 * 1024
+        && request.resource.contentType.matches('(image|video|audio)/.*');
+      allow update, delete: if inCouple(coupleId);
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}
