@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarClock, ImagePlus, Lock, Music, PenLine, X } from 'lucide-react'
+import { CalendarClock, ImagePlus, Link2, Link2Off, Lock, Music, PenLine, X } from 'lucide-react'
+import { useShareLink } from '@/lib/useShare'
 import { useCollection, useWriters } from '@/data/hooks'
 import { useCouple } from '@/context/CoupleContext'
 import { useToast } from '@/context/ToastContext'
@@ -103,6 +104,9 @@ function Reader({ letter, onClose, fromName, mine, onOpened }: { letter: Letter 
     onOpened(letter)
   }, [stage, letter?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const html = useMemo(() => sanitizeHtml(letter?.html ?? ''), [letter?.html])
+  const { find, share, revoke } = useShareLink()
+  const shared = letter ? find(letter.id) : undefined
+  const sealed = !!letter && letter.unlockAt > Date.now()
 
   return (
     <AnimatePresence>
@@ -131,6 +135,11 @@ function Reader({ letter, onClose, fromName, mine, onOpened }: { letter: Letter 
                 <div className="rich-content font-serif text-xl leading-[2rem]" dangerouslySetInnerHTML={{ __html: html }} />
                 <p className="mt-6 text-right font-script text-3xl text-wine">— {fromName}</p>
                 {letter.musicURL && <a href={letter.musicURL} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-full bg-wine px-4 py-2 text-sm text-white"><Music className="h-4 w-4" /> Play our song</a>}
+                <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-black/10 pt-4">
+                  <Button size="sm" variant="outline" disabled={sealed} onClick={() => share({ kind: 'letter', sourceId: letter.id, title: letter.title, html: letter.html, photoURL: letter.photoURL })}><Link2 className="h-4 w-4" /> {shared ? 'Share link' : 'Create share link'}</Button>
+                  {shared && <Button size="sm" variant="ghost" onClick={() => revoke(letter.id)}><Link2Off className="h-4 w-4" /> Turn link off</Button>}
+                  <span className="text-[11px] opacity-70">{sealed ? 'You can share this once it unlocks.' : 'Anyone with the link can read this letter until you turn it off.'}</span>
+                </div>
               </div>
             </motion.div>
           )}

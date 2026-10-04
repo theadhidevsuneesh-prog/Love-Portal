@@ -125,5 +125,9 @@ export function buildDemoSeed(): Partial<Record<CollectionName, Row[]>> {
     { ...base('n2', agoMs(180)), toUid: DEMO_ME, fromUid: DEMO_PARTNER, type: 'surprise', title: 'You have a surprise from your person 🎁', link: '/surprises', read: false },
     { ...base('n3', Date.now() - 1 * DAY), toUid: DEMO_ME, fromUid: DEMO_PARTNER, type: 'letter', title: 'A new love letter is waiting', link: '/letters', read: true },
   ]
-  return { messages, memories, letters, dateIdeas, surprises, coupons, timelineEvents, playlist, moods, notifications }
+  const bouquets: Row[] = [
+    { ...base('b1', agoMs(90)), authorId: DEMO_PARTNER, toUid: DEMO_ME, title: 'Just because', message: 'Seven roses for the seven things I love most about today. Come home soon.', spec: { stems: [{ type: 'rose', color: '#c0213f', count: 7 }, { type: 'peony', color: '#f19ab0', count: 3 }, { type: 'daisy', color: '#ffffff', count: 4 }], greenery: 'eucalyptus', wrap: 'kraft', wrapColor: '#c9a27a', ribbon: '#6b1d2e' } },
+    { ...base('b2', Date.now() - 20 * DAY), authorId: DEMO_ME, toUid: DEMO_PARTNER, title: 'Sunshine for you', message: 'You make every day brighter.', spec: { stems: [{ type: 'sunflower', color: '#f6c21b', count: 5 }, { type: 'lavender', color: '#9b7fd1', count: 4 }], greenery: 'gypsophila', wrap: 'tissue', wrapColor: '#fbf1e6', ribbon: '#2f4a3a' }, openedAt: Date.now() - 19 * DAY },
+  ]
+  return { bouquets, messages, memories, letters, dateIdeas, surprises, coupons, timelineEvents, playlist, moods, notifications }
 }

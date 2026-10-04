@@ -2,11 +2,11 @@ import type { CoupleDoc } from '@/types'
 
 export type CollectionName =
   | 'messages' | 'memories' | 'letters' | 'dateIdeas' | 'games' | 'surprises'
-  | 'coupons' | 'timelineEvents' | 'playlist' | 'moods' | 'notifications'
+  | 'coupons' | 'timelineEvents' | 'playlist' | 'moods' | 'notifications' | 'bouquets' | 'shares' | 'booth' | 'boothFrames'
 
 export const COUPLE_COLLECTIONS: CollectionName[] = [
   'messages', 'memories', 'letters', 'dateIdeas', 'games', 'surprises',
-  'coupons', 'timelineEvents', 'playlist', 'moods', 'notifications',
+  'coupons', 'timelineEvents', 'playlist', 'moods', 'notifications', 'bouquets', 'shares', 'booth', 'boothFrames',
 ]
 
 export type Filter = [field: string, value: string]

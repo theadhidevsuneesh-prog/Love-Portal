@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Camera, CameraOff, Check, Download, FlipHorizontal2, Heart, ImagePlus, RotateCcw, Send, Sticker as StickerIcon, Type, Trash2, Wand2, Frame, X } from 'lucide-react'
 import { useCamera } from '@/components/photobooth/useCamera'
+import { TogetherBooth, deleteBoothFrames, type TogetherResult } from '@/components/photobooth/TogetherBooth'
 import { FILTERS, STICKERS, TEMPLATES, canvasToBlob, ensureFonts, loadImage, renderComposite, type BoothMode, type Sticker } from '@/components/photobooth/render'
 import { useCouple } from '@/context/CoupleContext'
 import { useWriters } from '@/data/hooks'
@@ -17,13 +18,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 type Tab = 'filters' | 'frames' | 'stickers' | 'text'
 
 export default function PhotoBooth() {
-  const { me, partner, coupleId } = useCouple()
-  const { add, upload, notifyPartner, uid } = useWriters()
+  const { me, partner, coupleId, couple } = useCouple()
+  const { add, remove, upload, notifyPartner, uid } = useWriters()
   const toast = useToast()
   const cam = useCamera()
 
   const [phase, setPhase] = useState<'camera' | 'edit'>('camera')
   const [mode, setMode] = useState<BoothMode>('strip')
+  const [source, setSource] = useState<'solo' | 'together'>('solo')
+  const [pairNames, setPairNames] = useState<[string, string]>(['', ''])
+  const pairSession = useRef('')
   const [timer, setTimer] = useState(3)
   const [frames, setFrames] = useState<string[]>([])
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -50,11 +54,12 @@ export default function PhotoBooth() {
 
   const filter = FILTERS.find((f) => f.id === filterId)!
   const template = TEMPLATES.find((t) => t.id === templateId)!
-  const names: [string, string] = [me?.name ?? 'Me', partner?.name ?? 'You']
+  const effMode: BoothMode = source === 'together' ? 'pair' : mode
+  const names: [string, string] = source === 'together' && pairNames[0] ? pairNames : [me?.name ?? 'Me', partner?.name ?? 'You']
   const ratio = mode === 'strip' ? 4 / 3 : 3 / 4
 
   // Camera lifecycle: on while shooting, off while editing.
-  useEffect(() => { if (phase === 'camera') cam.start() ; else cam.stop() }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (phase === 'camera' && source === 'solo') cam.start() ; else cam.stop() }, [phase, source]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { cancelRef.current = true }, [])
 
   const shoot = useCallback(async () => {
@@ -101,25 +106,25 @@ export default function PhotoBooth() {
         if (hit) return hit
         const im = await loadImage(src); imgCache.current.set(src, im); return im
       }))
-      const canvas = await renderComposite(imgs, { mode, filter, template, caption, showDate, showNames, names, stickers: [], date: new Date() })
+      const canvas = await renderComposite(imgs, { mode: effMode, filter, template, caption, showDate, showNames, names, stickers: [], date: new Date() })
       if (dead) return
       canvasRef.current = canvas
       setPreview(canvas.toDataURL('image/jpeg', 0.9))
       setRendering(false)
     })().catch(() => { if (!dead) { setRendering(false); toast.error("We couldn't build your photo. Please retake.") } })
     return () => { dead = true }
-  }, [phase, frames, mode, filter, template, caption, showDate, showNames, names[0], names[1]]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, frames, effMode, filter, template, caption, showDate, showNames, names[0], names[1]]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Final export (with stickers) as canvas.
   const exportCanvas = async () => {
     const imgs = await Promise.all(frames.map((s) => imgCache.current.get(s) ?? loadImage(s)))
-    return renderComposite(imgs, { mode, filter, template, caption, showDate, showNames, names, stickers, date: new Date() })
+    return renderComposite(imgs, { mode: effMode, filter, template, caption, showDate, showNames, names, stickers, date: new Date() })
   }
 
   const download = async () => {
     try {
       const c = await exportCanvas()
-      downloadDataUrl(c.toDataURL('image/png'), `love-portal-${mode === 'strip' ? 'strip' : 'photo'}-${today()}.png`)
+      downloadDataUrl(c.toDataURL('image/png'), `love-portal-${effMode === 'single' ? 'photo' : 'strip'}-${today()}.png`)
       toast.success('Saved to your device.')
     } catch { toast.error("Download didn't work. Please try again.") }
   }
@@ -130,7 +135,7 @@ export default function PhotoBooth() {
     try {
       const blob = await canvasToBlob(await exportCanvas())
       const url = await upload(`couples/${coupleId}/memories/booth_${Date.now()}.jpg`, blob)
-      await add('memories', { title: caption.trim() || `${mode === 'strip' ? 'Photo strip' : 'Photo booth'} with ${partner?.name}`, date: today(), category: 'Just Us', tags: ['photobooth'], mediaType: 'photo', mediaURL: url })
+      await add('memories', { title: caption.trim() || `${effMode === 'single' ? 'Photo booth' : 'Photo strip'} with ${partner?.name}`, date: today(), category: 'Just Us', tags: ['photobooth'], mediaType: 'photo', mediaURL: url })
       notifyPartner('memory', `${me?.name} saved a photo booth memory`, '/memories')
       toast.show('Saved to Memories ❤️', 'love')
     } catch (e) { toast.error(friendlyError(e, "That upload didn't go through. Please try again.")) } finally { setBusy('') }
@@ -147,10 +152,19 @@ export default function PhotoBooth() {
     } catch (e) { toast.error(friendlyError(e, "That didn't send. Please try again.")) } finally { setBusy('') }
   }
 
-  const retake = () => { setFrames([]); setPreview(null); setPhase('camera') }
+  const dropPairFrames = useCallback(() => {
+    if (pairSession.current && couple) deleteBoothFrames(remove, pairSession.current, [...couple.members])
+    pairSession.current = ''
+  }, [couple, remove])
+  useEffect(() => () => { dropPairFrames() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const retake = () => { dropPairFrames(); setFrames([]); setPreview(null); setPhase('camera') }
+  const onTogether = (r: TogetherResult) => {
+    pairSession.current = r.sessionId
+    setPairNames(r.names); setFrames(r.frames); setStickers([]); setSelected(null); setPhase('edit')
+  }
 
   const addSticker = (emoji: string) => {
-    const s: Sticker = { id: Math.random().toString(36).slice(2), emoji, x: 0.5 + (Math.random() - 0.5) * 0.3, y: 0.35 + (Math.random() - 0.5) * 0.3, size: mode === 'strip' ? 0.14 : 0.16 }
+    const s: Sticker = { id: Math.random().toString(36).slice(2), emoji, x: 0.5 + (Math.random() - 0.5) * 0.3, y: 0.35 + (Math.random() - 0.5) * 0.3, size: effMode === 'single' ? 0.16 : 0.14 }
     setStickers((l) => [...l, s]); setSelected(s.id)
   }
 
@@ -163,7 +177,7 @@ export default function PhotoBooth() {
             <div><p className="eyebrow mb-1">Looking good</p><h1 className="text-4xl font-semibold sm:text-5xl">Make it yours</h1></div>
             <Button variant="outline" onClick={retake}><RotateCcw className="h-4 w-4" /> Retake</Button>
           </div>
-          <StickerStage preview={preview} rendering={rendering} stickers={stickers} setStickers={setStickers} selected={selected} setSelected={setSelected} mode={mode} />
+          <StickerStage preview={preview} rendering={rendering} stickers={stickers} setStickers={setStickers} selected={selected} setSelected={setSelected} mode={effMode} />
         </div>
 
         <div className="space-y-5 lg:sticky lg:top-8 lg:self-start">
@@ -233,13 +247,29 @@ export default function PhotoBooth() {
     )
   }
 
+  /* ───────── Together (long-distance) ───────── */
+  if (source === 'together') {
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col items-center">
+        <div className="mb-4 flex w-full flex-wrap items-end justify-between gap-3">
+          <div><p className="eyebrow mb-1">Even when you're far apart</p><h1 className="text-5xl font-semibold leading-none sm:text-6xl">Photo Booth</h1></div>
+          <Segmented value={source} onChange={setSource} options={[{ value: 'solo', label: 'Solo' }, { value: 'together', label: 'Together 💞' }]} />
+        </div>
+        <TogetherBooth onDone={onTogether} />
+      </div>
+    )
+  }
+
   /* ───────── Camera phase ───────── */
   const boxWidth = `min(100%, calc((100dvh - ${mode === 'strip' ? '21rem' : '22rem'}) * ${ratio}))`
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center">
       <div className="mb-4 flex w-full flex-wrap items-end justify-between gap-3">
         <div><p className="eyebrow mb-1">Say cheese</p><h1 className="text-5xl font-semibold leading-none sm:text-6xl">Photo Booth</h1></div>
-        <Segmented<BoothMode> value={mode} onChange={(m) => !running && setMode(m)} options={[{ value: 'single', label: 'Single photo' }, { value: 'strip', label: '4-shot strip' }]} />
+        <div className="flex flex-wrap gap-2">
+          <Segmented value={source} onChange={(v) => !running && setSource(v)} options={[{ value: 'solo', label: 'Solo' }, { value: 'together', label: 'Together 💞' }]} />
+          <Segmented<BoothMode> value={mode} onChange={(m) => !running && setMode(m)} options={[{ value: 'single', label: 'Single photo' }, { value: 'strip', label: '4-shot strip' }]} />
+        </div>
       </div>
 
       <div className="relative overflow-hidden rounded-[2rem] bg-wine-deep shadow-lift" style={{ width: boxWidth, aspectRatio: String(ratio) }}>
@@ -342,7 +372,7 @@ function StickerStage({ preview, rendering, stickers, setStickers, selected, set
   }
 
   return (
-    <div className={cn('relative', mode === 'strip' ? 'w-[min(100%,15rem)] sm:w-[min(100%,20rem)]' : 'w-[min(100%,26rem)]')}>
+    <div className={cn('relative', mode === 'strip' ? 'w-[min(100%,15rem)] sm:w-[min(100%,20rem)]' : mode === 'pair' ? 'w-[min(100%,17rem)] sm:w-[min(100%,22rem)]' : 'w-[min(100%,26rem)]')}>
       <div ref={box} className="relative touch-none select-none overflow-hidden rounded-xl shadow-lift" onPointerDown={() => setSelected(null)} onPointerMove={move} onPointerUp={() => (drag.current = null)} onPointerCancel={() => (drag.current = null)}>
         {preview ? <img src={preview} alt="Your photo preview" className="block w-full" draggable={false} /> : <div className="flex aspect-[3/5] items-center justify-center bg-blush/40"><Spinner /></div>}
         {rendering && preview && <div className="absolute inset-0 flex items-center justify-center bg-white/40"><Spinner /></div>}

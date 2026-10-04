@@ -1,4 +1,4 @@
-export type BoothMode = 'single' | 'strip'
+export type BoothMode = 'single' | 'strip' | 'pair'
 
 export interface Sticker { id: string; emoji: string; x: number; y: number; size: number } // x,y,size are 0..1 of composite width/height
 
@@ -185,7 +185,51 @@ function decorate(ctx: CanvasRenderingContext2D, o: RenderOpts, W: number, H: nu
   }
 }
 
+/**
+ * Long-distance strip: frames are [left0, right0, left1, right1, …] — four rows, two people per row.
+ * `names` must be in the same left/right order.
+ */
+async function renderPair(frames: HTMLImageElement[], o: RenderOpts): Promise<HTMLCanvasElement> {
+  const W = 720, P = 40, gap = 14, rows = 4, footerH = 210
+  const half = Math.round((W - P * 2 - gap) / 2)
+  const H = P + rows * half + (rows - 1) * gap + 24 + footerH
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  const g = ctx.createLinearGradient(0, 0, W, H)
+  g.addColorStop(0, o.template.bg[0]); g.addColorStop(1, o.template.bg[1])
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, W, H)
+  decorate(ctx, o, W, H, P)
+  for (let r = 0; r < rows; r++) {
+    const y = P + r * (half + gap)
+    for (let c = 0; c < 2; c++) {
+      const img = frames[r * 2 + c] ?? frames[frames.length - 1]
+      if (!img) continue
+      const x = P + c * (half + gap)
+      ctx.save()
+      ctx.shadowColor = 'rgba(40,10,20,.22)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.roundRect(x, y, half, half, 6); ctx.fill()
+      ctx.restore()
+      drawCover(ctx, img, x, y, half, half, o.filter, 6)
+    }
+    // a tiny heart where the two photos meet
+    ctx.fillStyle = o.template.accent
+    ctx.globalAlpha = 0.95
+    heart(ctx, P + half + gap / 2, y + half / 2, 7)
+    ctx.globalAlpha = 1
+  }
+  footer(ctx, o, W / 2, P + rows * half + (rows - 1) * gap + 24, W, footerH)
+  for (const s of o.stickers) {
+    ctx.font = `${Math.round(s.size * W)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(s.emoji, s.x * W, s.y * H)
+  }
+  return canvas
+}
+
 export async function renderComposite(frames: HTMLImageElement[], o: RenderOpts): Promise<HTMLCanvasElement> {
+  if (o.mode === 'pair') return renderPair(frames, o)
   const strip = o.mode === 'strip'
   const W = strip ? 640 : 900
   const P = strip ? 44 : 52

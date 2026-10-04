@@ -27,6 +27,8 @@ const Playlist = lazy(() => import('@/pages/Playlist'))
 const Assistant = lazy(() => import('@/pages/Assistant'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const Legal = lazy(() => import('@/pages/Legal'))
+const Bouquets = lazy(() => import('@/pages/Bouquets'))
+const SharedView = lazy(() => import('@/pages/SharedView'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 const DemoEntry = lazy(() => import('@/pages/DemoEntry'))
 
@@ -56,6 +58,7 @@ export default function App() {
           <Route path="/terms" element={<Legal kind="terms" />} />
           <Route path="/contact" element={<Legal kind="contact" />} />
           <Route path="/demo" element={<DemoEntry />} />
+          <Route path="/s/:token" element={<SharedView />} />
 
           <Route element={<GuestOnly />}>
             <Route path="/login" element={<Login />} />
@@ -80,6 +83,7 @@ export default function App() {
                   <Route path="/games" element={<Games />} />
                   <Route path="/our-story" element={<OurStory />} />
                   <Route path="/surprises" element={<Surprises />} />
+                  <Route path="/bouquets" element={<Bouquets />} />
                   <Route path="/playlist" element={<Playlist />} />
                   <Route path="/assistant" element={<Assistant />} />
                 </Route>

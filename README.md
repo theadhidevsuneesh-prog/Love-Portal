@@ -57,6 +57,14 @@ npm run test:rules                     # 76 Firestore security-rule tests (needs
 
 Verification emails appear in the emulator log / `http://127.0.0.1:9099/emulator/v1/projects/<id>/oobCodes`.
 
+## Long-distance extras
+* **Together Photo Booth** (`/photo-booth` → *Together*): both partners open it; a heartbeat in `booth/{coupleId}` shows who is here (and pings
+  the other person once if you're waiting). When either presses *Start together*, the other device joins and both run the same 3‑2‑1 ×4 sequence;
+  each person's four frames travel through short-lived `boothFrames` documents and are merged into one two-column strip. Frames are deleted when you leave the editor.
+* **Bouquets** (`/bouquets`): design with 8 flower types, colours, counts, greenery, wrap and ribbon (SVG art, no images stored), add a card, send.
+* **Share links** for letters and bouquets: creates an unlisted `shares/{randomId}` document readable by anyone *holding the link* (`/s/:id`, no login),
+  never listable, and revocable from the same screen.
+
 ## How it works
 
 ### Pairing two accounts

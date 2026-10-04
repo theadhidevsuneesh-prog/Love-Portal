@@ -1,6 +1,6 @@
 import {
   Home, Images, Camera, MessageCircleHeart, Mail, CalendarHeart, Gamepad2, BookHeart, Gift,
-  Music2, Settings, Sparkles, type LucideIcon,
+  Music2, Settings, Sparkles, Flower2, type LucideIcon,
 } from 'lucide-react'
 import type { MemoryCategory, NotificationType, SongCategory } from '@/types'
 
@@ -16,6 +16,7 @@ export const NAV: NavItem[] = [
   { to: '/games', label: 'Games', icon: Gamepad2 },
   { to: '/our-story', label: 'Our Story', icon: BookHeart },
   { to: '/surprises', label: 'Surprises', icon: Gift },
+  { to: '/bouquets', label: 'Bouquets', icon: Flower2 },
   { to: '/playlist', label: 'Playlist', icon: Music2 },
   { to: '/assistant', label: 'Love Assistant', icon: Sparkles },
   { to: '/settings', label: 'Settings', icon: Settings },

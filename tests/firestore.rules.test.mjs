@@ -113,6 +113,37 @@ await t('notification to outsider denied', () => assertFails(ctx('alice').collec
 await t('recipient reads own notifications', () => assertSucceeds(ctx('bob').collection('notifications').where('coupleId', '==', 'c1').where('toUid', '==', 'bob').get()))
 await t('sender cannot read partner’s notifications', () => assertFails(ctx('alice').collection('notifications').where('coupleId', '==', 'c1').where('toUid', '==', 'bob').get()))
 
+console.log('bouquets, shares, together booth')
+const spec = { stems: [{ type: 'rose', color: '#c0213f', count: 5 }], greenery: 'none', wrap: 'kraft', wrapColor: '#c9a27a', ribbon: '#6b1d2e' }
+const b1 = await ctx('alice').collection('bouquets').add({ coupleId: 'c1', authorId: 'alice', toUid: 'bob', title: 'For you', spec, createdAt: now })
+await t('recipient marks bouquet opened', () => assertSucceeds(ctx('bob').doc(`bouquets/${b1.id}`).update({ openedAt: now })))
+await t('recipient cannot edit bouquet', () => assertFails(ctx('bob').doc(`bouquets/${b1.id}`).update({ title: 'hacked' })))
+await t('bouquet to a non-partner denied', () => assertFails(ctx('alice').collection('bouquets').add({ coupleId: 'c1', authorId: 'alice', toUid: 'carol', title: 'x', spec, createdAt: now })))
+await t('bouquet with too many stems denied', () => assertFails(ctx('alice').collection('bouquets').add({ coupleId: 'c1', authorId: 'alice', toUid: 'bob', title: 'x', spec: { ...spec, stems: [1, 2, 3, 4, 5] }, createdAt: now })))
+await t('outsider cannot read bouquets', () => assertFails(ctx('carol').collection('bouquets').where('coupleId', '==', 'c1').get()))
+const sh = await ctx('bob').collection('shares').add({ coupleId: 'c1', authorId: 'bob', kind: 'letter', sourceId: 'l1', title: 'Hi', fromName: 'Bob', html: '<p>hello</p>', createdAt: now })
+await t('anyone (even signed out) can open a share by its id', () => assertSucceeds(env.unauthenticatedContext().firestore().doc(`shares/${sh.id}`).get()))
+await t('nobody can list all shares', () => assertFails(env.unauthenticatedContext().firestore().collection('shares').get()))
+await t('outsider cannot list the couple’s shares', () => assertFails(ctx('carol').collection('shares').where('coupleId', '==', 'c1').get()))
+await t('member can list own shares (to find existing link)', () => assertSucceeds(ctx('alice').collection('shares').where('coupleId', '==', 'c1').get()))
+await t('outsider cannot create a share in this couple', () => assertFails(ctx('carol').collection('shares').add({ coupleId: 'c1', authorId: 'carol', kind: 'letter', sourceId: 'l', title: 'x', fromName: 'c', createdAt: now })))
+await t('shares cannot be edited by the public', () => assertFails(env.unauthenticatedContext().firestore().doc(`shares/${sh.id}`).update({ title: 'x' })))
+await t('partner can revoke a share', () => assertSucceeds(ctx('alice').doc(`shares/${sh.id}`).delete()))
+await t('booth session: members only', async () => {
+  await assertSucceeds(ctx('alice').doc('booth/c1').set({ coupleId: 'c1', phase: 'lobby', seen_alice: 1, createdAt: now }, { merge: true }))
+  await assertSucceeds(ctx('bob').doc('booth/c1').set({ coupleId: 'c1', seen_bob: 2 }, { merge: true }))
+  await assertFails(ctx('carol').doc('booth/c1').get())
+  await assertFails(ctx('alice').doc('booth/other').set({ coupleId: 'c1', phase: 'lobby' }))
+})
+await t('booth frames: only my own', async () => {
+  await assertSucceeds(ctx('alice').doc('boothFrames/s1_alice').set({ coupleId: 'c1', sessionId: 's1', uid: 'alice', frames: ['a', 'b', 'c', 'd'], createdAt: now }))
+  await assertFails(ctx('alice').doc('boothFrames/s1_bob').set({ coupleId: 'c1', sessionId: 's1', uid: 'bob', frames: ['a'], createdAt: now }))
+  await assertFails(ctx('alice').doc('boothFrames/s2_alice').set({ coupleId: 'c1', sessionId: 's1', uid: 'alice', frames: ['a'], createdAt: now }))
+  await assertSucceeds(ctx('bob').collection('boothFrames').where('coupleId', '==', 'c1').where('sessionId', '==', 's1').get())
+  await assertFails(ctx('carol').collection('boothFrames').where('coupleId', '==', 'c1').get())
+  await assertSucceeds(ctx('bob').doc('boothFrames/s1_alice').delete())
+})
+
 console.log('disconnect')
 await t('stranger cannot sever the link', () => assertFails(ctx('carol').doc('partnerLinks/alice').delete()))
 await t('member disconnects both links', async () => {

@@ -48,7 +48,7 @@ export function useCamera() {
   useEffect(() => stop, [stop])
 
   /** Copy the current frame, center-cropped to `ratio` (w/h), mirrored for the front camera. */
-  const grab = useCallback((ratio: number, maxW = 1400): string | null => {
+  const grab = useCallback((ratio: number, maxW = 1400, quality = 0.92): string | null => {
     const v = videoRef.current
     if (!v || !v.videoWidth) return null
     const vr = v.videoWidth / v.videoHeight
@@ -60,7 +60,7 @@ export function useCamera() {
     const ctx = c.getContext('2d')!
     if (facing === 'user') { ctx.translate(c.width, 0); ctx.scale(-1, 1) }
     ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height)
-    return c.toDataURL('image/jpeg', 0.92)
+    return c.toDataURL('image/jpeg', quality)
   }, [facing])
 
   return { videoRef, status, error, facing, canFlip, start, stop, flip, grab }

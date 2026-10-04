@@ -234,6 +234,47 @@ service cloud.firestore {
       allow delete: if readable() && resource.data.toUid == me();
     }
 
+    // bouquets: designed by one partner, opened by the other
+    match /bouquets/{id} {
+      allow read: if readable();
+      allow create: if createdByMe() && partnerOf(request.resource.data.coupleId, request.resource.data.toUid)
+        && request.resource.data.title is string && request.resource.data.title.size() <= 80
+        && request.resource.data.spec.stems is list && request.resource.data.spec.stems.size() <= 4
+        && (!('message' in request.resource.data) || request.resource.data.message.size() <= 600);
+      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['openedAt'])));
+      allow delete: if mine();
+    }
+
+    // shares: an unlisted public link to ONE letter/bouquet. Anyone holding the (random) id can read that single
+    // document; nobody can list them. Only couple members can create, list and delete (revoke).
+    match /shares/{id} {
+      allow get: if true;
+      allow list: if readable();
+      allow create: if createdByMe()
+        && request.resource.data.kind in ['letter','bouquet']
+        && request.resource.data.title is string && request.resource.data.title.size() <= 100
+        && (!('html' in request.resource.data) || request.resource.data.html.size() <= 60000)
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL.size() < 600000);
+      allow delete: if readable();
+    }
+
+    // together photo booth: one live session document per couple, id == coupleId
+    match /booth/{id} {
+      allow read: if readable();
+      allow create: if inCouple(request.resource.data.coupleId) && id == request.resource.data.coupleId;
+      allow update: if readable() && request.resource.data.coupleId == resource.data.coupleId;
+      allow delete: if readable();
+    }
+    // each person writes only their own frames: <sessionId>_<uid>
+    match /boothFrames/{id} {
+      allow read: if readable();
+      allow create, update: if inCouple(request.resource.data.coupleId)
+        && request.resource.data.uid == me()
+        && id == request.resource.data.sessionId + '_' + me()
+        && request.resource.data.frames is list && request.resource.data.frames.size() <= 4;
+      allow delete: if readable();
+    }
+
     // default deny
     match /{document=**} { allow read, write: if false; }
   }

@@ -204,3 +204,47 @@ export interface AppNotification extends CoupleDoc {
   link?: string
   read: boolean
 }
+
+export type FlowerType = 'rose' | 'tulip' | 'sunflower' | 'daisy' | 'lily' | 'peony' | 'blossom' | 'lavender'
+export interface BouquetStem { type: FlowerType; color: string; count: number }
+export interface BouquetSpec {
+  stems: BouquetStem[]
+  greenery: 'none' | 'eucalyptus' | 'fern' | 'gypsophila'
+  wrap: 'none' | 'kraft' | 'tissue' | 'cone' | 'floral'
+  wrapColor: string
+  ribbon: string
+}
+export interface Bouquet extends CoupleDoc {
+  authorId: Id
+  toUid: Id
+  title: string
+  message?: string
+  spec: BouquetSpec
+  openedAt?: number
+}
+
+/** A public, unlisted link to a single letter or bouquet. The document id is the (unguessable) token. */
+export interface Share extends CoupleDoc {
+  authorId: Id
+  kind: 'letter' | 'bouquet'
+  sourceId: Id
+  title: string
+  fromName: string
+  html?: string
+  photoURL?: string
+  message?: string
+  spec?: BouquetSpec
+}
+
+/** Live "together" photo-booth session: one document per couple. Per-user keys: seen_<uid>, ready_<uid>. */
+export interface BoothSession extends CoupleDoc {
+  phase: 'lobby' | 'shooting'
+  sessionId?: string
+  startedBy?: Id
+  [k: string]: unknown
+}
+export interface BoothFrames extends CoupleDoc {
+  sessionId: string
+  uid: Id
+  frames: string[]
+}
