@@ -58,11 +58,12 @@ conf.auth.providers.googleSignIn.supportEmail = SUPPORT_EMAIL
 conf.auth.providers.googleSignIn.authorizedRedirectUris = [`https://${PROJECT}.firebaseapp.com/__/auth/handler`, 'http://localhost']
 fs.writeFileSync('firebase.json', JSON.stringify(conf, null, 2) + '\n')
 
-log('Deploying auth config + Firestore & Storage rules…')
-console.log(fb('deploy', '--only', 'auth,firestore:rules,firestore:indexes,storage'))
+log('Deploying auth config + Firestore rules…')
+const withStorage = process.env.WITH_STORAGE === '1' // needs the paid Blaze plan; the app works without it
+console.log(fb('deploy', '--only', `auth,firestore:rules,firestore:indexes${withStorage ? ',storage' : ''}`))
 
 console.log(`
 ✔ Done. Next:
-  • Make sure Firestore (Build → Firestore Database) and Storage (Build → Storage) have been created once in the console.
+  • Make sure Firestore (Build → Firestore Database) has been created once in the console. Storage is optional (paid plan).
   • In Authentication → Settings → Authorized domains, add your deployed domain (localhost is allowed by default).
   • npm run dev   → sign up, or "Continue with Google".`)

@@ -28,7 +28,7 @@ export function PhotoPicker({ name, value, onChange, onError }: { name?: string;
         if (err) { onError?.(err); return }
         setBusy(true)
         try {
-          const blob = await squareAvatar(f)
+          const blob = await squareAvatar(f, 256)
           onChange(blob, URL.createObjectURL(blob))
         } catch { onError?.("We couldn't read that image. Try another one.") }
         finally { setBusy(false) }

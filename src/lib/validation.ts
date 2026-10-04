@@ -90,7 +90,11 @@ export const MAX_IMAGE_BYTES = 12 * 1024 * 1024
 export const MAX_VIDEO_BYTES = 80 * 1024 * 1024
 export const MAX_AUDIO_BYTES = 20 * 1024 * 1024
 
+import { INLINE_MEDIA, MAX_INLINE_BYTES, VIDEO_UNSUPPORTED } from './storageMode'
+
 export function validateFile(file: File, kind: 'image' | 'video' | 'audio'): string | null {
+  if (INLINE_MEDIA && kind === 'video') return VIDEO_UNSUPPORTED
+  if (INLINE_MEDIA && kind === 'audio' && file.size > MAX_INLINE_BYTES) return 'That recording is too long. Keep voice notes under about two minutes.'
   const limits = { image: MAX_IMAGE_BYTES, video: MAX_VIDEO_BYTES, audio: MAX_AUDIO_BYTES }
   if (!file.type.startsWith(`${kind}/`)) return `That doesn't look like ${kind === 'image' ? 'an image' : `a ${kind} file`}.`
   if (file.size > limits[kind]) return `That file is too large (max ${Math.round(limits[kind] / 1048576)} MB).`

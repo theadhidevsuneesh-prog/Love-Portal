@@ -41,6 +41,12 @@ Prefer to do it by hand? `npx -y firebase-tools@latest apps:create WEB "Love Por
 `apps:sdkconfig WEB <APP_ID>` → copy the values into `.env` (see `.env.example`), then
 `npx -y firebase-tools@latest deploy --only auth,firestore,storage`.
 
+### Free plan: no Cloud Storage needed
+New Storage buckets require Firebase's paid Blaze plan, so by default (`VITE_STORAGE_MODE` unset) Love Portal stores photos and
+voice notes **inside Firestore** as small compressed data URLs (images are auto-shrunk to fit Firestore's 1 MiB document limit,
+voice notes up to ~2 minutes). Videos are disabled in this mode. Auth + Firestore are free on the Spark plan.
+When you later enable Storage, set `VITE_STORAGE_MODE=storage`, deploy `storage.rules` (`WITH_STORAGE=1 npm run firebase:setup`) and everything switches to real files.
+
 ### Local development with the Firebase Emulator Suite
 
 ```bash

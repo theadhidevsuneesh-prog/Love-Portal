@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { INLINE_MEDIA, toInlineDataUrl } from '@/lib/storageMode'
 import { auth, db, isFirebaseConfigured, requireFirebase, storage } from '@/lib/firebase'
 import { AppError } from '@/lib/errors'
 import { createUserProfile, deleteUserDocs, syncPublicProfile } from '@/data/connection'
@@ -96,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const uploadAvatar = async (uid: string, blob: Blob): Promise<string> => {
+    if (INLINE_MEDIA) return toInlineDataUrl(blob, 45_000) // small: it is copied into the public code card and couple card
     const { storage: st } = requireFirebase()
     const r = ref(st, `users/${uid}/avatar.jpg`)
     await uploadBytes(r, blob, { contentType: blob.type || 'image/jpeg' })
@@ -207,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!u || !u.email || !profile) throw new AppError('no-user', 'Please log in again.')
         await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password))
         await deleteUserDocs(profile).catch(() => undefined)
-        if (storage) await import('firebase/storage').then(({ deleteObject }) => deleteObject(ref(storage!, `users/${u.uid}/avatar.jpg`))).catch(() => undefined)
+        if (storage && !INLINE_MEDIA) await import('firebase/storage').then(({ deleteObject }) => deleteObject(ref(storage!, `users/${u.uid}/avatar.jpg`))).catch(() => undefined)
         await deleteUser(u)
       },
     }

@@ -42,13 +42,15 @@ service cloud.firestore {
       allow create: if signedIn() && me() == userId
         && request.resource.data.uid == userId
         && request.resource.data.keys().hasOnly(['uid','name','nickname','email','photoURL','birthday','connectionCode','profileComplete','createdAt','theme','notificationPrefs','privacy'])
-        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL.size() < 150000);
       allow update: if signedIn() && me() == userId
         && request.resource.data.uid == userId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.email == resource.data.email
         && request.resource.data.keys().hasOnly(['uid','name','nickname','email','photoURL','birthday','connectionCode','profileComplete','createdAt','theme','notificationPrefs','privacy'])
         && request.resource.data.connectionCode.matches('LOVE-[A-Z0-9]{4}')
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL.size() < 150000)
         && request.resource.data.name is string && request.resource.data.name.size() <= 40
         && (!('nickname' in request.resource.data) || (request.resource.data.nickname is string && request.resource.data.nickname.size() <= 24));
       allow delete: if signedIn() && me() == userId;
@@ -62,7 +64,8 @@ service cloud.firestore {
         && request.resource.data.uid == me()
         && request.resource.data.code == code
         && code.matches('LOVE-[A-Z0-9]{4}')
-        && request.resource.data.keys().hasOnly(['code','uid','name','photoURL']);
+        && request.resource.data.keys().hasOnly(['code','uid','name','photoURL'])
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL.size() < 150000);
       allow update: if signedIn() && resource.data.uid == me() && request.resource.data.uid == me() && request.resource.data.code == code;
       allow delete: if signedIn() && resource.data.uid == me();
     }

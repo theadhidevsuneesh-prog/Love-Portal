@@ -4,6 +4,7 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage'
 import { requireFirebase } from '@/lib/firebase'
 import { clean, type CollectionName, type Filter, type Store } from './store'
+import { INLINE_MEDIA, toInlineDataUrl } from '@/lib/storageMode'
 import type { CoupleDoc } from '@/types'
 
 export const firestoreStore: Store = {
@@ -35,7 +36,12 @@ export const firestoreStore: Store = {
     const { db } = requireFirebase()
     await deleteDoc(doc(db, col, id))
   },
-  async upload(path: string, file: Blob, onProgress?: (pct: number) => void) {
+  async upload(path: string, file: Blob, onProgress?: (pct: number) => void, maxBytes?: number) {
+    if (INLINE_MEDIA) {
+      const url = await toInlineDataUrl(file, maxBytes)
+      onProgress?.(100)
+      return url
+    }
     const { storage } = requireFirebase()
     const task = uploadBytesResumable(ref(storage, path), file, { contentType: file.type })
     await new Promise<void>((resolve, reject) => {

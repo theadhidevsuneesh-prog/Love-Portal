@@ -15,6 +15,7 @@ import { fmtSeconds, useRecorder } from '@/lib/useRecorder'
 import { cameraErrorMessage, friendlyError } from '@/lib/errors'
 import { memorySchema, validateFile, zodErrors, type FieldErrors } from '@/lib/validation'
 import { cn, formatDay, today } from '@/lib/utils'
+import { INLINE_MEDIA } from '@/lib/storageMode'
 import type { Memory, MemoryCategory } from '@/types'
 
 const rid = () => Math.random().toString(36).slice(2, 8)
@@ -157,7 +158,7 @@ export default function Memories() {
   )
 }
 
-function AddMemory({ open, onClose, onCreate, upload, coupleId }: { open: boolean; onClose: () => void; onCreate: (d: Record<string, unknown>) => Promise<void>; upload: (p: string, f: Blob, cb?: (n: number) => void) => Promise<string>; coupleId: string }) {
+function AddMemory({ open, onClose, onCreate, upload, coupleId }: { open: boolean; onClose: () => void; onCreate: (d: Record<string, unknown>) => Promise<void>; upload: (p: string, f: Blob, cb?: (n: number) => void, max?: number) => Promise<string>; coupleId: string }) {
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const empty = { title: '', description: '', date: today(), location: '', tags: '', category: 'Random Moments' as MemoryCategory }
@@ -182,7 +183,7 @@ function AddMemory({ open, onClose, onCreate, upload, coupleId }: { open: boolea
     const kinds = picked.map((f) => (f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'audio' : 'image') as 'video' | 'audio' | 'image')
     for (let i = 0; i < picked.length; i++) { const e = validateFile(picked[i], kinds[i]); if (e) return toast.error(e) }
     setVoice(null)
-    setFiles(isVideo || kinds[0] === 'audio' ? [picked[0]] : picked.slice(0, 6))
+    setFiles(isVideo || kinds[0] === 'audio' ? [picked[0]] : picked.slice(0, INLINE_MEDIA ? 3 : 6))
   }
 
   const toggleRec = async () => {
@@ -208,7 +209,7 @@ function AddMemory({ open, onClose, onCreate, upload, coupleId }: { open: boolea
         for (let i = 0; i < files.length; i++) {
           const blob = mediaType === 'photo' ? await compressImage(files[i]) : files[i]
           const ext = (files[i].name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin'
-          urls.push(await upload(`couples/${coupleId}/memories/${Date.now()}_${rid()}.${mediaType === 'photo' ? 'jpg' : ext}`, blob, (n) => setProgress(Math.round(((i + n / 100) / files.length) * 100))))
+          urls.push(await upload(`couples/${coupleId}/memories/${Date.now()}_${rid()}.${mediaType === 'photo' ? 'jpg' : ext}`, blob, (n) => setProgress(Math.round(((i + n / 100) / files.length) * 100)), INLINE_MEDIA ? Math.floor(850_000 / files.length) : undefined))
         }
         mediaURL = urls[0]; extra = urls.slice(1)
       }
@@ -239,7 +240,7 @@ function AddMemory({ open, onClose, onCreate, upload, coupleId }: { open: boolea
           ) : voiceUrl ? (
             <div className="flex items-center gap-3"><audio src={voiceUrl} controls className="h-10 flex-1" /><Button variant="ghost" size="icon" onClick={() => setVoice(null)} aria-label="Remove recording"><X className="h-4 w-4" /></Button></div>
           ) : (
-            <p className="py-3 text-center text-sm text-muted">Add photos (up to 6), one video, or record a voice note.</p>
+            <p className="py-3 text-center text-sm text-muted">{INLINE_MEDIA ? 'Add up to 3 photos or record a voice note.' : 'Add photos (up to 6), one video, or record a voice note.'}</p>
           )}
           <div className="mt-3 flex flex-wrap justify-center gap-2">
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={recorder.recording}><ImagePlus className="h-4 w-4" /> Photos / video</Button>

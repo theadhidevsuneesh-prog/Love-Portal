@@ -15,6 +15,7 @@ import { fmtSeconds, useRecorder } from '@/lib/useRecorder'
 import { friendlyError } from '@/lib/errors'
 import { couponSchema, surpriseSchema, validateFile } from '@/lib/validation'
 import { cn, relativeTime } from '@/lib/utils'
+import { INLINE_MEDIA } from '@/lib/storageMode'
 import type { Coupon, Surprise, SurpriseType } from '@/types'
 
 const TYPES: { id: SurpriseType; label: string; icon: typeof Gift; hint: string }[] = [
@@ -189,7 +190,7 @@ function CreateSurprise({ open, onClose }: { open: boolean; onClose: () => void 
     <Modal open={open} onClose={busy ? () => undefined : onClose} title="Create a surprise" description={`Hide something sweet for ${partner?.name} to unwrap.`} size="lg">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {TYPES.map((t) => (
+          {TYPES.filter((t) => !(INLINE_MEDIA && t.id === 'video')).map((t) => (
             <button key={t.id} onClick={() => { setType(t.id); setFile(null); setFileName('') }} aria-pressed={type === t.id}
               className={cn('flex flex-col items-start gap-1 rounded-3xl border-2 p-3 text-left transition-colors', type === t.id ? 'border-wine bg-blush' : 'border-line bg-surface hover:border-rose')}>
               <t.icon className="h-5 w-5 text-wine" /><span className="text-sm font-medium">{t.label}</span><span className="text-[11px] leading-tight text-muted">{t.hint}</span>

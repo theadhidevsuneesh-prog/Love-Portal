@@ -25,7 +25,7 @@ export interface Store {
   set(col: CollectionName, coupleId: string, id: string, data: Record<string, unknown>): Promise<void>
   update(col: CollectionName, id: string, patch: Record<string, unknown>): Promise<void>
   remove(col: CollectionName, id: string): Promise<void>
-  upload(path: string, file: Blob, onProgress?: (pct: number) => void): Promise<string>
+  upload(path: string, file: Blob, onProgress?: (pct: number) => void, maxBytes?: number): Promise<string>
 }
 
 /** Firestore rejects `undefined`; strip it (and keep nulls out of our model). */
