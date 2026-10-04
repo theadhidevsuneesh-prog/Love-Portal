@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  EmailAuthProvider, browserLocalPersistence, browserSessionPersistence, createUserWithEmailAndPassword,
+  EmailAuthProvider, GoogleAuthProvider, browserLocalPersistence, getRedirectResult, signInWithPopup, signInWithRedirect,
+  type User as FirebaseUser, browserSessionPersistence, createUserWithEmailAndPassword,
   deleteUser, onAuthStateChanged, reauthenticateWithCredential, sendEmailVerification,
   sendPasswordResetEmail, setPersistence, signInWithEmailAndPassword, signOut as fbSignOut,
   updatePassword, updateProfile as fbUpdateProfile,
 } from 'firebase/auth'
-import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { auth, db, isFirebaseConfigured, requireFirebase, storage } from '@/lib/firebase'
 import { AppError } from '@/lib/errors'
@@ -27,6 +28,7 @@ interface AuthApi {
   exitDemo: () => void
   signUp: (v: { name: string; email: string; password: string; photo?: Blob | null }) => Promise<void>
   signIn: (email: string, password: string, remember: boolean) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   resendVerification: () => Promise<void>
@@ -48,6 +50,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [demoProfileState, setDemoProfile] = useState<UserProfile>(demoProfile)
+
+  // First Google sign-in has no profile yet: create it (with a connection code) from the Google account.
+  const ensureProfile = async (u: FirebaseUser) => {
+    if (!db) return
+    const snap = await getDoc(doc(db, 'users', u.uid))
+    if (snap.exists()) return
+    await createUserProfile({
+      uid: u.uid, name: (u.displayName ?? u.email?.split('@')[0] ?? 'Me').slice(0, 40), email: u.email ?? '',
+      photoURL: u.photoURL ?? undefined, profileComplete: false,
+    })
+  }
+
+  // Completes a Google sign-in that used the redirect fallback (e.g. popup blocked on mobile).
+  useEffect(() => {
+    if (!auth) return
+    getRedirectResult(auth).then((r) => (r?.user ? ensureProfile(r.user) : undefined)).catch(() => undefined)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!auth) return
@@ -116,6 +135,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await signInWithEmailAndPassword(a, email, password)
       },
 
+      async signInWithGoogle() {
+        const { auth: a } = requireFirebase()
+        await setPersistence(a, browserLocalPersistence)
+        const provider = new GoogleAuthProvider()
+        provider.setCustomParameters({ prompt: 'select_account' })
+        try {
+          const cred = await signInWithPopup(a, provider)
+          await ensureProfile(cred.user)
+        } catch (e) {
+          if ((e as { code?: string }).code === 'auth/popup-blocked') { await signInWithRedirect(a, provider); return }
+          throw e
+        }
+      },
+
       async signOut() {
         if (isDemo) { exitDemo(); return }
         if (auth) await fbSignOut(auth)
@@ -152,6 +185,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await setDoc(doc(db, 'users', user.uid), clean(next as Record<string, unknown>), { merge: true })
         const merged = { ...(profile as UserProfile), ...next }
         if (merged.connectionCode) await syncPublicProfile(merged).catch(() => undefined)
+        // keep my card in the shared couple document current (the partner reads names/photos from there)
+        const link = await getDoc(doc(db, 'partnerLinks', user.uid)).catch(() => null)
+        if (link?.exists()) {
+          await updateDoc(doc(db, 'couples', link.data().coupleId as string), {
+            [`memberInfo.${user.uid}`]: clean({ name: merged.name, nickname: merged.nickname, photoURL: merged.photoURL, birthday: merged.birthday }),
+          }).catch(() => undefined)
+        }
         if (auth?.currentUser && next.name) await fbUpdateProfile(auth.currentUser, { displayName: next.name }).catch(() => undefined)
       },
 

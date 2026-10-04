@@ -62,6 +62,9 @@ await t('members can read couple', () => assertSucceeds(ctx('bob').doc('couples/
 await t('non-member cannot read couple', () => assertFails(ctx('carol').doc('couples/c1').get()))
 await t('member cannot change members', () => assertFails(ctx('bob').doc('couples/c1').update({ members: ['bob', 'carol'] })))
 await t('member can set anniversary', () => assertSucceeds(ctx('bob').doc('couples/c1').update({ anniversary: '2025-01-01' })))
+await t('member cannot rewrite the PARTNER’s profile card', () => assertFails(ctx('bob').doc('couples/c1').update({ 'memberInfo.alice': { name: 'Hacked' } })))
+await t('member can update their OWN profile card', () => assertSucceeds(ctx('bob').doc('couples/c1').update({ 'memberInfo.bob': { name: 'Bobby' } })))
+await t('couple status cannot be set to arbitrary values', () => assertFails(ctx('bob').doc('couples/c1').update({ status: 'deleted' })))
 await t('non-member cannot edit couple', () => assertFails(ctx('carol').doc('couples/c1').update({ anniversary: '1999-01-01' })))
 // carol tries to connect to already-connected alice
 await env.withSecurityRulesDisabled(async (c) => { await c.firestore().doc('connectionRequests/carol_alice').set({ ...req, fromUid: 'carol', toUid: 'alice', status: 'pending' }) })
@@ -69,6 +72,9 @@ await t('already-connected user cannot form a 2nd couple', () => assertFails(bat
 await t('couple delete is never allowed', () => assertFails(ctx('bob').doc('couples/c1').delete()))
 
 console.log('couple data isolation')
+await t('user cannot add arbitrary fields to own profile', () => assertFails(ctx('bob').doc('users/bob').update({ isAdmin: true })))
+await t('user cannot change profile email', () => assertFails(ctx('dave', false).doc('users/dave').update({ email: 'x@y.com' })))
+await t('user can update own display name', () => assertSucceeds(ctx('dave', false).doc('users/dave').update({ name: 'Dave D' })))
 const mem = { coupleId: 'c1', authorId: 'alice', title: 'Pier', createdAt: now, date: '2025-01-01', tags: [], category: 'Trips', mediaType: 'none' }
 await t('member adds memory', () => assertSucceeds(ctx('alice').collection('memories').add(mem)))
 await t('member lists own couple’s memories', () => assertSucceeds(ctx('bob').collection('memories').where('coupleId', '==', 'c1').get()))
@@ -84,6 +90,7 @@ await t('partner can react to message', () => assertSucceeds(ctx('bob').doc(`mes
 await t('partner can pin / favourite', () => assertSucceeds(ctx('bob').doc(`messages/${m1.id}`).update({ pinned: true, favoritedBy: ['bob'] })))
 await t('partner cannot edit text', () => assertFails(ctx('bob').doc(`messages/${m1.id}`).update({ text: 'tampered' })))
 await t('partner cannot delete my message', () => assertFails(ctx('bob').doc(`messages/${m1.id}`).delete()))
+await t('author cannot grow a message past the size limit via update', () => assertFails(ctx('alice').doc(`messages/${m1.id}`).update({ text: 'x'.repeat(2001) })))
 await t('author can delete own message', () => assertSucceeds(ctx('alice').doc(`messages/${m1.id}`).delete()))
 await t('invalid message kind rejected', () => assertFails(ctx('alice').collection('messages').add({ coupleId: 'c1', authorId: 'alice', kind: 'weird', createdAt: now })))
 await t('oversized message rejected', () => assertFails(ctx('alice').collection('messages').add({ coupleId: 'c1', authorId: 'alice', kind: 'text', text: 'x'.repeat(2001), createdAt: now })))

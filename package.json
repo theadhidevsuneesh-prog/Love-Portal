@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "emulators": "firebase emulators:start --project demo-loveportal --only auth,firestore,storage",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-loveportal \"node tests/firestore.rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-loveportal \"node tests/firestore.rules.test.mjs\"",
+    "firebase:setup": "node scripts/setup-firebase.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

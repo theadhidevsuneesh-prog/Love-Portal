@@ -46,7 +46,11 @@ service cloud.firestore {
       allow update: if signedIn() && me() == userId
         && request.resource.data.uid == userId
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.name is string && request.resource.data.name.size() <= 40;
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.keys().hasOnly(['uid','name','nickname','email','photoURL','birthday','connectionCode','profileComplete','createdAt','theme','notificationPrefs','privacy'])
+        && request.resource.data.connectionCode.matches('LOVE-[A-Z0-9]{4}')
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && (!('nickname' in request.resource.data) || (request.resource.data.nickname is string && request.resource.data.nickname.size() <= 24));
       allow delete: if signedIn() && me() == userId;
     }
 
@@ -137,7 +141,10 @@ service cloud.firestore {
       allow update: if verified() && resource.data.members.hasAny([me()])
         && request.resource.data.members == resource.data.members
         && request.resource.data.requestId == resource.data.requestId
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status in ['active','disconnected']
+        // a member may edit shared dates, but only their OWN profile card (never their partner's)
+        && request.resource.data.memberInfo.diff(resource.data.memberInfo).affectedKeys().hasOnly([me()]);
       allow delete: if false;
     }
 
@@ -148,20 +155,27 @@ service cloud.firestore {
         && request.resource.data.kind in ['text','image','voice','gesture']
         && (!('text' in request.resource.data) || request.resource.data.text.size() <= 2000);
       // partner may only react / pin / favourite; the author may edit anything but ownership
-      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || onlyKeys(['reactions','pinned','favoritedBy']));
+      allow update: if readable() && sameOwner()
+        && request.resource.data.kind == resource.data.kind
+        && (!('text' in request.resource.data) || request.resource.data.text.size() <= 2000)
+        && (resource.data.authorId == me() || onlyKeys(['reactions','pinned','favoritedBy']));
       allow delete: if mine();
     }
     match /memories/{id} {
       allow read: if readable();
       allow create: if createdByMe() && request.resource.data.title is string && request.resource.data.title.size() <= 100;
-      allow update, delete: if mine() && sameOwner();
+      allow update: if mine() && sameOwner() && request.resource.data.title is string && request.resource.data.title.size() <= 100;
+      allow delete: if mine();
     }
     match /letters/{id} {
       allow read: if readable();
       allow create: if createdByMe() && partnerOf(request.resource.data.coupleId, request.resource.data.toUid)
         && request.resource.data.title is string && request.resource.data.title.size() <= 100
+        && request.resource.data.html is string && request.resource.data.html.size() <= 60000
         && request.resource.data.unlockAt is number;
-      allow update: if readable() && sameOwner() && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['openedAt'])));
+      allow update: if readable() && sameOwner()
+        && request.resource.data.html.size() <= 60000
+        && (resource.data.authorId == me() || (resource.data.toUid == me() && onlyKeys(['openedAt'])));
       allow delete: if mine();
     }
     match /dateIdeas/{id} {
@@ -211,6 +225,7 @@ service cloud.firestore {
       allow read: if readable() && resource.data.toUid == me();
       allow create: if inCouple(request.resource.data.coupleId)
         && request.resource.data.fromUid == me()
+        && request.resource.data.title is string && request.resource.data.title.size() <= 200
         && partnerOf(request.resource.data.coupleId, request.resource.data.toUid);
       allow update: if readable() && resource.data.toUid == me() && onlyKeys(['read']);
       allow delete: if readable() && resource.data.toUid == me();

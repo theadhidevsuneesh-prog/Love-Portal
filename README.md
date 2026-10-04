@@ -19,21 +19,34 @@ With no Firebase keys the app still runs: the landing page works and **`/demo`**
 demo couple (Adhidev & Ridhika) backed by an in-memory store. Demo data lives only in memory, is clearly bannered,
 and never touches Firebase.
 
-### Connect your own Firebase project
+### Connect your Firebase project (`new-project-f8d4e`)
 
-1. Create a Firebase project; enable **Authentication → Email/Password**, **Firestore** and **Storage**.
-2. Register a web app and copy its config into `.env` (see `.env.example`). These values are public client
-   identifiers, **not** secrets — access is enforced by the security rules.
-3. Deploy the rules: `npx firebase deploy --only firestore:rules,storage` (first deploy grants the
-   cross-service role Storage rules need to read Firestore).
-4. (Optional) AI assistant — see below.
+Sign-in methods: **Email/Password** and **Google**. `.firebaserc` already points at `new-project-f8d4e`.
+
+On your own computer (this needs a browser login, so it can't run in a locked-down sandbox):
+
+```bash
+npm install
+npx -y firebase-tools@latest login
+SUPPORT_EMAIL=you@example.com npm run firebase:setup
+```
+
+`scripts/setup-firebase.mjs` follows the Firebase agent-skills workflow: it selects the project, registers a web app if none
+exists, writes `.env` from `apps:sdkconfig`, enables both sign-in providers via the `auth` block in `firebase.json`, and deploys
+`auth`, Firestore rules/indexes and Storage rules. Before it runs, create the databases once in the console
+(**Build → Firestore Database**, **Build → Storage**). Add your deployed domain under **Authentication → Settings → Authorized domains**
+(`localhost` is allowed by default).
+
+Prefer to do it by hand? `npx -y firebase-tools@latest apps:create WEB "Love Portal"`, then
+`apps:sdkconfig WEB <APP_ID>` → copy the values into `.env` (see `.env.example`), then
+`npx -y firebase-tools@latest deploy --only auth,firestore,storage`.
 
 ### Local development with the Firebase Emulator Suite
 
 ```bash
 npm run emulators                      # auth + firestore + storage on 127.0.0.1
 VITE_USE_EMULATORS=true npm run dev    # with demo-* project keys in .env
-npm run test:rules                     # 69 Firestore security-rule tests (needs Java)
+npm run test:rules                     # 76 Firestore security-rule tests (needs Java)
 ```
 
 Verification emails appear in the emulator log / `http://127.0.0.1:9099/emulator/v1/projects/<id>/oobCodes`.

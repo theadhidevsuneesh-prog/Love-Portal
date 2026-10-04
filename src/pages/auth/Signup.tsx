@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Lock, Mail, User } from 'lucide-react'
 import { AuthLayout, ConfigNotice } from './AuthLayout'
 import { Button } from '@/components/ui/Button'
+import { GoogleButton } from '@/components/ui/GoogleButton'
 import { Input } from '@/components/ui/Input'
 import { PhotoPicker } from '@/components/ui/PhotoPicker'
 import { useAuth } from '@/context/AuthContext'
@@ -40,6 +41,7 @@ export default function Signup() {
     <AuthLayout title="Create your Love Portal" subtitle="Two minutes to set up. A lifetime of little moments."
       footer={<>Already have an account? <Link to="/login" className="font-medium text-wine hover:underline">Login</Link></>}>
       {!configured && <ConfigNotice />}
+      <div className="mb-4 space-y-4"><GoogleButton onError={setFormError} /></div>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <PhotoPicker name={v.name} value={photo?.url} onChange={(blob, url) => setPhoto({ blob, url })} onError={toast.error} />
         <Input label="Name" autoComplete="name" icon={<User className="h-4 w-4" />} value={v.name} onChange={set('name')} error={errors.name} placeholder="Your name" />

@@ -1,4 +1,17 @@
 {
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Love Portal",
+        "supportEmail": "REPLACE_WITH_YOUR_SUPPORT_EMAIL",
+        "authorizedRedirectUris": [
+          "https://new-project-f8d4e.firebaseapp.com/__/auth/handler",
+          "http://localhost"
+        ]
+      }
+    }
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

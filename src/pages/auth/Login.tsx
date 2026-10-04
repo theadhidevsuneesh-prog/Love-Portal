@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, Mail } from 'lucide-react'
 import { AuthLayout, ConfigNotice } from './AuthLayout'
 import { Button } from '@/components/ui/Button'
+import { GoogleButton } from '@/components/ui/GoogleButton'
 import { Input } from '@/components/ui/Input'
 import { useAuth } from '@/context/AuthContext'
 import { loginSchema, zodErrors, type FieldErrors } from '@/lib/validation'
@@ -37,6 +38,7 @@ export default function Login() {
     <AuthLayout title="Welcome back" subtitle="Your person has been waiting."
       footer={<>New here? <Link to="/signup" className="font-medium text-wine hover:underline">Create your Love Portal</Link></>}>
       {!configured && <ConfigNotice />}
+      <div className="mb-4 space-y-4"><GoogleButton onError={setFormError} /></div>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <Input label="Email" type="email" autoComplete="email" inputMode="email" icon={<Mail className="h-4 w-4" />} value={v.email}
           onChange={(e) => setV({ ...v, email: e.target.value })} error={errors.email} placeholder="you@example.com" />
